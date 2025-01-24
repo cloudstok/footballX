@@ -57,7 +57,7 @@ export const handleCashout = async (socket) => {
     if (!cachedPlayerDetails) return socket.emit('betError', 'Invalid Player Details');
     const playerDetails = JSON.parse(cachedPlayerDetails);
     if (!socket.bet) return socket.emit('betError', 'No active bet associated for cashout');
-    if(socket.intervalId) clearInterval(socket.intervalId);
+    if (socket.intervalId) clearInterval(socket.intervalId);
     const winAmount = Math.min(appConfig.maxCashoutAmount, Number(socket.bet.winAmount)).toFixed(2);
     const userIP = socket.handshake.headers?.['x-forwarded-for']?.split(',')[0].trim() || socket.handshake.address;
     const playerId = playerDetails.id.split(':')[1];
@@ -90,9 +90,9 @@ export const handleCashout = async (socket) => {
 
 export const disconnect = async (socket) => {
     const cachedPlayerDetails = await getCache(`PL:${socket.id}`);
-    if(!cachedPlayerDetails) return socket.disconnect(true);
+    if (!cachedPlayerDetails) return socket.disconnect(true);
     const cachedGame = socket.bet;
-    if(cachedGame) await handleCashout(socket);
+    if (cachedGame) await handleCashout(socket);
     await deleteCache(`PL:${socket.id}`);
     console.log("User disconnected:", socket.id);
 };
