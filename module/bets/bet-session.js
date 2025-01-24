@@ -3,7 +3,7 @@ import {  setCache } from "../../utilities/redis-connection.js";
 import { insertSettlement } from "./bet-db.js";
 
 
-export const sendBetRequest = async(matchId, betAmount, playerDetails, socket) => {
+export const initBetRequest = async (matchId, betAmount, playerDetails, socket) => {
     const userIP = socket.handshake.headers?.['x-forwarded-for']?.split(',')[0].trim() || socket.handshake.address;
     const playerId = playerDetails.id.split(':')[1];
 

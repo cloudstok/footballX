@@ -3,6 +3,7 @@ import { generateUUIDv7, updateBalanceFromAccount } from "../utilities/common-fu
 import { getCache, deleteCache, setCache } from "../utilities/redis-connection.js";
 import { createLogger } from "../utilities/logger.js";
 import { getRandomMultiplier, logEventAndEmitResponse } from "../utilities/helper-function.js";
+import { initBetRequest } from '../module/bets/bet-session.js';
 const betLogger = createLogger('Bets', 'jsonl');
 
 
@@ -16,7 +17,7 @@ export const placeBet = async (socket, bet) => {
     if (Number(playerDetails.balance) < betAmount) return logEventAndEmitResponse(gameLog, 'Insufficient Balance', 'bet', socket);
     if ((betAmount < appConfig.minBetAmount) || (betAmount > appConfig.maxBetAmount)) return logEventAndEmitResponse(gameLog, 'Invalid Bet', 'bet', socket);
     const matchId = generateUUIDv7();
-    const matchData = await getResult(matchId, betAmount, playerDetails, socket);
+    const matchData = await initBetRequest(matchId, betAmount, playerDetails, socket);
     if (matchData['error']) return logEventAndEmitResponse(gameLog, matchData['error'], 'bet', socket);
     betLogger.info(JSON.stringify({ ...gameLog, matchData }));
     socket.bet = matchData;
