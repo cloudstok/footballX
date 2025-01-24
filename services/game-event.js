@@ -91,7 +91,6 @@ export const disconnect = async (socket) => {
     const cachedPlayerDetails = await getCache(`PL:${socket.id}`);
     if(!cachedPlayerDetails) return socket.disconnect(true);
     const cachedGame = socket.bet;
-    if(socket.intervalId) clearInterval(socket.intervalId);
     if(cachedGame) await handleCashout(socket);
     await deleteCache(`PL:${socket.id}`);
     console.log("User disconnected:", socket.id);
