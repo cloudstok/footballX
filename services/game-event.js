@@ -72,10 +72,10 @@ export const handleCashout = async (socket) => {
     if (!isTransactionSuccessful) console.error(`Credit failed for user: ${playerDetails.userId} for round ${socket.bet.match_id}`);
     const creditPlayerDetails = await getCache(`PL:${playerDetails.socketId}`);
     if (creditPlayerDetails) {
-        let parseduserDetails = JSON.parse(creditPlayerDetails);
-        parseduserDetails.balance = (Number(parseduserDetails.balance) + Number(winAmount)).toFixed(2);
-        await setCache(`PL:${parseduserDetails.socketId}`, JSON.stringify(parseduserDetails));
-        socket.emit('info', { user_id: parseduserDetails.userId, operator_id: parseduserDetails.operatorId, balance: parseduserDetails.balance });
+        let parsedUserDetails = JSON.parse(creditPlayerDetails);
+        parsedUserDetails.balance = (Number(parsedUserDetails.balance) + Number(winAmount)).toFixed(2);
+        await setCache(`PL:${parsedUserDetails.socketId}`, JSON.stringify(parsedUserDetails));
+        socket.emit('info', { user_id: parsedUserDetails.userId, operator_id: parsedUserDetails.operatorId, balance: parsedUserDetails.balance });
     };
     delete socket.bet, socket.intervalId;
     return socket.emit('end_state', {
