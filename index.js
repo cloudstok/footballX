@@ -21,7 +21,7 @@ const startServer = async () => {
         app.use(json());
         initSocket(io);
         app.get('/', (req, res)=> {
-            return res.status(200).send({ status: true, msg: "Plinko game server is up and running"})
+            return res.status(200).send({ status: true, msg: "FootballX game server is up and running"})
         })
 
         server.listen(port, () => { logger.info(`Server listening at PORT ${port}`)});

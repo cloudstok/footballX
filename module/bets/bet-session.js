@@ -1,7 +1,6 @@
 import { updateBalanceFromAccount } from "../../utilities/common-function.js";
+import { read } from "../../utilities/db-connection.js";
 import {  setCache } from "../../utilities/redis-connection.js";
-import { insertSettlement } from "./bet-db.js";
-
 
 export const initBetRequest = async (matchId, betAmount, playerDetails, socket) => {
     const userIP = socket.handshake.headers?.['x-forwarded-for']?.split(',')[0].trim() || socket.handshake.address;
@@ -25,6 +24,7 @@ export const initBetRequest = async (matchId, betAmount, playerDetails, socket) 
         opId: playerDetails.operatorId,
         btAmt: betAmount,
         match_id: matchId,
+        winAmount: 0.00,
         txn_id: transaction.txn_id,
         multiplier: 1.00,
         crTs: Date.now(),
@@ -32,3 +32,8 @@ export const initBetRequest = async (matchId, betAmount, playerDetails, socket) 
     }
     return matchData;
 };
+
+export const betHistory = async(userId, operatorId, socket) => {
+    const data = await read(`SELECT max_mult, bet_amount, win_amount, created_at FROM settlement WHERE user_id = ? AND operator_id = ? ORDER BY created_at desc LIMIT 30`, [userId, operatorId]);
+    return socket.emit('betHistory', data);
+}

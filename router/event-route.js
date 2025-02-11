@@ -1,4 +1,4 @@
-import { placeBet, disconnect, handleCashout} from '../services/game-event.js';
+import { placeBet, handleCashout} from '../services/game-event.js';
 
 export const registerEvents = async (socket) => {
     socket.on('message', (data) => {
@@ -8,5 +8,4 @@ export const registerEvents = async (socket) => {
             case 'CO' : return handleCashout(socket);
         }
     })
-    socket.on('disconnect', ()=> disconnect(socket));
 }

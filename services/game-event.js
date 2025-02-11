@@ -4,6 +4,8 @@ import { getCache, deleteCache, setCache } from "../utilities/redis-connection.j
 import { createLogger } from "../utilities/logger.js";
 import { getRandomMultiplier, logEventAndEmitResponse } from "../utilities/helper-function.js";
 import { initBetRequest } from '../module/bets/bet-session.js';
+import { insertSettlement } from "../module/bets/bet-db.js";
+const userLocks = new Map();
 const betLogger = createLogger('Bets', 'jsonl');
 
 
@@ -30,7 +32,12 @@ export const placeBet = async (socket, bet) => {
 
 async function initMultiplier(socket) {
     const resultMult = getRandomMultiplier();
+    socket.bet.matchMult = resultMult;
     const interval = setInterval(async () => {
+        if (!socket.bet) {
+            clearInterval(interval);
+            return;
+        }
         socket.bet.multiplier += 0.01;
         const currentWin = (socket.bet.btAmt * socket.bet.multiplier).toFixed(2);
         socket.bet.winAmount = currentWin;
@@ -41,50 +48,100 @@ async function initMultiplier(socket) {
         if (socket.bet.multiplier >= resultMult) {
             socket.emit('end_state', {
                 message: "Game Ended",
-                mult: Number(socket.bet.multiplier).toFixed(2),
+                mult: '0.00',
                 status: 'LOSS',
-                bank: 0.00
+                bank: '0.00'
+            });
+            await insertSettlement({
+                matchId: socket.bet.match_id,
+                operatorId: socket.bet.opId,
+                userId: socket.bet.uId,
+                betAmount: socket.bet.btAmt,
+                multiplier: 0.00,
+                matchMaxMult: socket.bet.matchMult,
+                winAmount: 0.00,
+                status: 'loss'
             });
             clearInterval(interval);
-            delete socket.bet, socket.intervalId;
+            delete socket.bet, delete socket.intervalId;
         }
-    }, 50);
+    }, 70);
     socket.intervalId = interval;
+};
+
+const acquireLock = async (user_id) => {
+    while (userLocks.get(user_id)) {
+        await userLocks.get(user_id);
+    }
+
+    let resolveLock;
+    const lockPromise = new Promise((resolve) => {
+        resolveLock = resolve;
+    });
+
+    userLocks.set(user_id, lockPromise);
+
+    return () => {
+        resolveLock();
+        userLocks.delete(user_id);
+    };
 };
 
 export const handleCashout = async (socket) => {
     const cachedPlayerDetails = await getCache(`PL:${socket.id}`);
     if (!cachedPlayerDetails) return socket.emit('betError', 'Invalid Player Details');
     const playerDetails = JSON.parse(cachedPlayerDetails);
-    if (!socket.bet) return socket.emit('betError', 'No active bet associated for cashout');
-    if (socket.intervalId) clearInterval(socket.intervalId);
-    const winAmount = Math.min(appConfig.maxCashoutAmount, Number(socket.bet.winAmount)).toFixed(2);
-    const userIP = socket.handshake.headers?.['x-forwarded-for']?.split(',')[0].trim() || socket.handshake.address;
-    const playerId = playerDetails.id.split(':')[1];
-    const updateBalanceData = {
-        id: socket.bet.match_id,
-        winning_amount: winAmount,
-        socket_id: playerDetails.socketId,
-        txn_id: socket.bet.txn_id,
-        user_id: playerId,
-        ip: userIP
-    };
-    const isTransactionSuccessful = await updateBalanceFromAccount(updateBalanceData, "CREDIT", playerDetails);
-    if (!isTransactionSuccessful) console.error(`Credit failed for user: ${playerDetails.userId} for round ${socket.bet.match_id}`);
-    const creditPlayerDetails = await getCache(`PL:${playerDetails.socketId}`);
-    if (creditPlayerDetails) {
-        let parsedUserDetails = JSON.parse(creditPlayerDetails);
-        parsedUserDetails.balance = (Number(parsedUserDetails.balance) + Number(winAmount)).toFixed(2);
-        await setCache(`PL:${parsedUserDetails.socketId}`, JSON.stringify(parsedUserDetails));
-        socket.emit('info', { user_id: parsedUserDetails.userId, operator_id: parsedUserDetails.operatorId, balance: parsedUserDetails.balance });
-    };
-    delete socket.bet, socket.intervalId;
-    return socket.emit('end_state', {
-        message: "Game Ended",
-        mult: Number(socket.bet.multiplier).toFixed(2),
-        status: 'WIN',
-        bank: winAmount
-    });
+    const releaseLock = await acquireLock(`${playerDetails.operatorId}:${playerDetails.userId}`);
+    try{
+        if (!socket.bet) return socket.emit('betError', 'No active bet associated for cashout');
+        const winAmount = Math.min(appConfig.maxCashoutAmount, Number(socket.bet.winAmount)).toFixed(2);
+        if (Number(winAmount) > 0) {
+            const userIP = socket.handshake.headers?.['x-forwarded-for']?.split(',')[0].trim() || socket.handshake.address;
+            const playerId = playerDetails.id.split(':')[1];
+            const updateBalanceData = {
+                id: socket.bet.match_id,
+                winning_amount: winAmount,
+                socket_id: playerDetails.socketId,
+                txn_id: socket.bet.txn_id,
+                user_id: playerId,
+                ip: userIP
+            };
+            const isTransactionSuccessful = await updateBalanceFromAccount(updateBalanceData, "CREDIT", playerDetails);
+            if (!isTransactionSuccessful) console.error(`Credit failed for user: ${playerDetails.userId} for round ${socket.bet.match_id}`);
+            const creditPlayerDetails = await getCache(`PL:${playerDetails.socketId}`);
+            if (creditPlayerDetails) {
+                let parsedUserDetails = JSON.parse(creditPlayerDetails);
+                parsedUserDetails.balance = (Number(parsedUserDetails.balance) + Number(winAmount)).toFixed(2);
+                await setCache(`PL:${parsedUserDetails.socketId}`, JSON.stringify(parsedUserDetails));
+                socket.emit('info', { user_id: parsedUserDetails.userId, operator_id: parsedUserDetails.operatorId, balance: parsedUserDetails.balance });
+            };
+        }
+        if (socket.intervalId) clearInterval(socket.intervalId);
+        await insertSettlement({
+            matchId: socket.bet.match_id,
+            operatorId: socket.bet.opId,
+            userId: socket.bet.uId,
+            betAmount: socket.bet.btAmt,
+            multiplier: Number(winAmount) > 0 ? socket.bet.multiplier : '0.00',
+            matchMaxMult: socket.bet.matchMult,
+            winAmount: winAmount,
+            status: Number(winAmount) > 0 ? 'win' : 'loss'
+        });
+        socket.emit('end_state', {
+            message: "Game Ended",
+            mult: Number(winAmount) > 0 ?  Number(socket.bet.multiplier).toFixed(2) : '0.00',
+            status: Number(winAmount) > 0 ? 'WIN' : 'LOSS',
+            bank: winAmount
+        });
+        if (socket.intervalId) clearInterval(socket.intervalId);
+        delete socket.bet, delete socket.intervalId;
+        return;
+    } catch(err){
+        console.err(err);
+        return;
+    } finally{
+        releaseLock();
+    }
 }
 
 
